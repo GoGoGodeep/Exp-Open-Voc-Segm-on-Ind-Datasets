@@ -1,12 +1,17 @@
-# 开放词汇在工业数据集上的实验
+![image](https://github.com/user-attachments/assets/edc2f61e-3d1b-454d-a54d-16ae43678877)# 开放词汇在工业数据集上的实验
 
 ## 🖼️ SAM相关模型实验
+- **SAM**
+- 
 - **EBSeg**  
 - **OVSAM**
 
 ## 🔍 开放词汇目标检测实验
 - **GLIP**  
 - **YOLO-World**
+- **Grounding DINO![image](https://github.com/user-attachments/assets/69acaf09-c664-432d-ab21-b0d515d72785)
+**
+
 
 ## 🎨 Diffusion相关模型实验
 - **iSeg**  
