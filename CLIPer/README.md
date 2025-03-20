@@ -1,7 +1,17 @@
-### CLIPer的实验代码，仅上传了做了更改的代码，其余部分与源码保持一致。
+### 🔧 CLIPer 实验代码说明
 
-<ol>
-<li>app.py：对53-56行进行修改</li>
-<li>modified_clip/model.py：增加CLIPer_BLIP类</li>
-<li>ovs/pipeline.py：对26-29行进行修改，对refinement进行大量修改，增加BLIP文本描述增强，增加注意力图可视化保存的功能</li>
-</ol>
+**注：本项目仅包含核心修改代码，未改动部分与原始代码库保持完全一致**
+
+#### 📝 关键代码变更
+**`app.py`**
+- 功能优化：重构53-56行交互逻辑，提升指令解析稳定性
+
+**`modified_clip/model.py`**
+- 架构扩展：新增 `CLIPer_BLIP` 融合类，实现多模态特征联合编码
+
+**`ovs/pipeline.py`** 
+- 核心改进：
+  - 重构26-29行预处理流程
+  - 升级refinement模块架构
+  - 集成 **BLIP文本描述增强器** 
+  - 自动保存注意力热力图
