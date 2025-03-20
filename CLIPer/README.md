@@ -3,3 +3,8 @@
 #### app.py：对53-56行进行修改
 #### modified_clip/model.py：增加CLIPer_BLIP类
 #### ovs/pipeline.py：对26-29行进行修改，对refinement进行大量修改，增加BLIP文本描述增强，增加注意力图可视化保存的功能
+<ol>
+<li>app.py：对53-56行进行修改</li>
+<li>modified_clip/model.py：增加CLIPer_BLIP类</li>
+<li>ovs/pipeline.py：对26-29行进行修改，对refinement进行大量修改，增加BLIP文本描述增强，增加注意力图可视化保存的功能</li>
+</ol>
