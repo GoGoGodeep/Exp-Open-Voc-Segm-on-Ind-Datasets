@@ -9,6 +9,8 @@
 - **GLIP**  
 - **YOLO-World**
 - **Grounding DINO**
+  - **DINOv2**
+- **OWL-ViT**
 
 ## 🎨 Diffusion相关模型实验
 - **iSeg**  
@@ -16,7 +18,6 @@
 - **CLIPer**
 
 ## 🔎 注意力机制相关实验
-- **DINOv2**
 - **PnP-OVSS**
 
 ---
