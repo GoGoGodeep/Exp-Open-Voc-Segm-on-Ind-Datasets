@@ -1,7 +1,7 @@
 # 开放词汇在工业数据集上的实验
 
 ## 🖼️ SAM相关模型实验
-- **SAM**
+- **SAM**  Paper:  Code:
 - **EBSeg**  
 - **OVSAM**
 
