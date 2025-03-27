@@ -271,6 +271,200 @@ def get_grad_cam_labelascaption(batch_id, drop_iter, args, imgs_in, org_img_size
                                                    max_block_num=max_block_num,
                                                    cam_type="gradcam")
 
+"""
+以下是添加了详细注释的代码，解释了每个关键步骤的功能和实现逻辑：
+
+```python
+def save_img_union_attention(model_textloc, imgs_in, org_img_sizes, args, gt_class_name_list, img_ids, drop_iter,
+                             norm_imgs, img_shape, cats, nms, txt_tokens, rank, att_head,  max_block_num=None,
+                             cam_type="gradcam"):
+    """
+    保存联合注意力图并生成最终分割结果
+    主要步骤：
+    1. 提取指定层的交叉注意力图
+    2. 过滤无关类别并重新推理
+    3. 合并多词标签的注意力图
+    4. 生成二值分割掩码
+    5. 后处理（CRF/模糊）
+    6. 计算并保存评估指标
+    """
+    
+    # 禁用指定层的注意力保存以节省内存（选择第7-8层，对应原始模型的第8-9层）
+    for block_num in range(7, 9):
+        model_textloc.module.text_encoder.base_model.base_model.encoder.layer[
+            block_num
+        ].crossattention.self.save_attention = False
+    
+    with torch.inference_mode():
+        # 加载原始图像和真实标签
+        org_img_list = load_OrgImage(args, img_ids)          # 加载原始尺寸图像
+        label_trues = Load_GroundTruth(args, img_ids)        # 加载像素级真实标签
+
+        # 通过CLIP预测过滤相关类别（弱监督关键步骤）
+        caption_filtered_list = []
+        class_filtered_list = []
+        best_class_idx_list = []
+        for img in range(len(img_ids)):
+            best_class_idx_list, class_filtered_list, caption_filtered_list = Load_predicted_classes(
+                args, nms, best_class_idx_list, class_filtered_list, caption_filtered_list, 
+                gt_class_name_list, img_ids, img, pred_path='BLIP_0514_VOC_Clip_classification'
+            )
+
+    # 使用过滤后的文本提示重新进行BLIP推理
+    txt_tokens_filtered = model_textloc.module.tokenizer(
+        caption_filtered_list, 
+        padding="max_length",
+        max_length=500,
+        return_tensors="pt"
+    ).to(rank)
+    gradcam_0_filtered, gradcam_agg_dropfiltered = Inference_BLIP_filteredcaption(
+        args, model_textloc, txt_tokens_filtered, imgs_in, norm_imgs, 
+        img_ids, caption_filtered_list, class_filtered_list, rank
+    )
+
+    with torch.inference_mode():
+        # -------------------- 第一次丢弃迭代处理 --------------------
+        # 合并多词标签的注意力图（例如将"fire truck"的两个token注意力合并）
+        filtered_average_attention_map_list = []
+        for img_num, gradcam_filtered in enumerate(gradcam_0_filtered):
+            perimg_filtered_average_attention_map = Mean_over_filtered_label_tokens(
+                model_textloc, txt_tokens_filtered, gradcam_filtered, 
+                class_filtered_list, img_num
+            )
+            filtered_average_attention_map_list.append(perimg_filtered_average_attention_map)
+
+        # 保存注意力图可视化结果（仅调试用）
+        for img, img_id in enumerate(img_ids):
+            if int(args.max_att_block_num) == 8 and int(args.prune_att_head) == 9 and img_id == "2010_005428":
+                for i, union_Att in enumerate(filtered_average_attention_map_list[img]):
+                    Path(f"{args.save_path}/Blip_reinferene_Salience_Drop/").mkdir(parents=True, exist_ok=True)
+                    gradcam_image_c = getAttMap(norm_imgs[img].cpu().numpy(), union_Att.cpu().numpy(), blur=True)
+                    im_gradcam_c = Image.fromarray((gradcam_image_c * 255).astype(np.uint8), 'RGB')
+                    im_gradcam_c.save(f"{args.save_path}/...")  # 保存路径细节省略
+
+        # -------------------- 生成初步分割结果 --------------------
+        label_preds_withfiltered_caption = []
+        for img, pred_map in enumerate(filtered_average_attention_map_list):
+            # 1. 归一化并应用阈值生成二值掩码
+            thresholded_pred_map = (pred_map - pred_map.min()) / (pred_map.max() - pred_map.min())
+            thresholded_pred_map = (thresholded_pred_map >= args.threshold).type(torch.bool)
+            
+            # 2. 调整掩码尺寸到原始图像分辨率
+            Blip_final_pred = torch.nn.functional.interpolate(
+                pred_map.unsqueeze(0), 
+                size=label_trues[img].shape, 
+                mode='bilinear', 
+                align_corners=True
+            ).squeeze()
+            
+            # 3. 添加背景类别
+            Blip_max_map = torch.max(Blip_final_pred, dim=0)[0] if Blip_final_pred.dim()==3 else Blip_final_pred
+            background = (Blip_max_map == 0).unsqueeze(0)
+            
+            # 根据数据集类型组合前景和背景
+            if args.data_type == "voc":
+                final_mask = torch.cat((background, Blip_final_pred), dim=0)
+            elif args.data_type in ["psc", "ade20k"]:
+                final_mask = Blip_final_pred if len(best_class_idx_list[img]) >=3 else torch.cat(...)
+
+            # 4. 后处理（CRF/高斯模糊）
+            if args.postprocess:
+                final_mask = postprocess(args, final_mask, org_img_list, label_trues, img)
+            else:
+                final_mask = torch.argmax(final_mask, dim=0).numpy()
+
+            # 5. 映射类别ID并保存结果
+            final_mask = remap_class_ids(final_mask, best_class_idx_list[img], args.data_type)
+            label_preds_withfiltered_caption.append(final_mask)
+
+        # -------------------- 多次丢弃迭代处理 --------------------
+        if gradcam_agg_dropfiltered is not None:
+            # 类似第一次迭代的过程，但使用聚合多次丢弃的结果
+            # ...（代码结构类似，省略具体实现）
+
+        # -------------------- 评估与保存 --------------------
+        # 计算mIoU等指标
+        if gradcam_0_filtered is not None:
+            acc_table, hist = scores(label_trues, label_preds_withfiltered_caption, cats, len(cats)+1)
+            print(f"mIoU after filtering: {acc_table['Mean IoU']}")
+        
+        # 保存评估结果
+        np.save(f"{args.save_path}/hist_withfiltered_caption/img_{img_ids[0]}_...", hist)
+        return None
+
+# ----------- 辅助函数说明 -----------
+def Mean_over_filtered_label_tokens(...):
+    """合并多词标签的注意力图（如将"fire truck"的两个token注意力平均）"""
+
+def postprocess(...):
+    """后处理模块，包含：
+    1. 高斯模糊：平滑注意力边界
+    2. 密集CRF：基于颜色和空间相似性优化分割边界
+    """
+
+def scores(...):
+    """计算分割指标：
+    - Pixel Accuracy
+    - Mean IoU
+    - Class-wise IoU
+    """
+```
+
+### 关键代码段说明
+
+1. **注意力层选择**  
+```python
+for block_num in range(7, 9):  # 操作第8-9层（0-based索引）
+    model_textloc.module.text_encoder...save_attention = False
+```
+- 选择BLIP模型的特定交叉注意力层进行特征提取，关闭其他层的注意力保存以节省内存
+
+2. **弱监督类别过滤**  
+```python
+best_class_idx_list = Load_predicted_classes(...)
+```
+- 基于CLIP的预测结果过滤无关类别，仅保留高置信度类别
+
+3. **多标签注意力合并**  
+```python
+perimg_filtered_average_attention_map = Mean_over_filtered_label_tokens(...)
+```
+- 处理多词类别（如"fire truck"），将多个token的注意力图合并为单个类别注意力
+
+4. **自适应阈值处理**  
+```python
+thresholded_pred_map = (pred_map - pred_map.min()) / (pred_map.max() - pred_map.min())
+thresholded_pred_map = (thresholded_pred_map >= args.threshold)
+```
+- 动态归一化注意力值后应用阈值生成二值掩码
+
+5. **多尺度分辨率对齐**  
+```python
+Blip_final_pred = torch.nn.functional.interpolate(...)
+```
+- 将低分辨率注意力图（如48x48）上采样到原始图像分辨率
+
+6. **CRF后处理**  
+```python
+final_mask = densecrf(org_img, final_mask)
+```
+- 使用颜色和空间相似性优化分割边界，减少"椒盐噪声"
+
+7. **评估指标计算**  
+```python
+acc_table = scores(label_trues, predictions, cats)
+```
+- 计算mIoU时排除背景类别（ID=0），仅评估前景类别精度
+
+### 创新点实现
+
+- **动态类别过滤**：通过`Load_predicted_classes`实现基于CLIP的开放词汇类别选择
+- **多阶段注意力优化**：首轮生成粗粒度掩码，后续迭代通过Salience DropOut补充细节
+- **跨模态对齐**：`Mean_over_filtered_label_tokens`实现文本token到图像区域的细粒度对齐
+- **设备感知处理**：通过`.to(rank)`确保多GPU环境下张量位置正确
+
+这个函数完整实现了论文中从注意力提取到最终评估的完整流程，体现了PnP-OVSS无需微调即可实现开放词汇分割的核心思想。
+"""
 
 def save_img_union_attention(model_textloc, imgs_in, org_img_sizes, args, gt_class_name_list, img_ids, drop_iter,
                              norm_imgs, img_shape, cats, nms, txt_tokens, rank, att_head,  max_block_num=None,
