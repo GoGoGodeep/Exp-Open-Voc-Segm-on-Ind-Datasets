@@ -19,6 +19,7 @@
 
 ## 🔎 注意力机制相关实验
 - **[PnP-OVSS](https://arxiv.org/pdf/2311.17095)**
+  - **[BLIP](https://arxiv.org/pdf/2201.12086)**
 
 ---
 
