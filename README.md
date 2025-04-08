@@ -20,7 +20,10 @@
 ## 🔎 注意力机制相关实验
 - **[PnP-OVSS](https://arxiv.org/pdf/2311.17095)**
   - **[BLIP](https://arxiv.org/pdf/2201.12086)**
-- **[LPOSS](https://arxiv.org/pdf/2503.19777)**
+- **[BLIP2](https://arxiv.org/pdf/2301.12597)**
+
+## ✌ 视觉大模型相关实验
+- **[Qwen2-VL](https://arxiv.org/pdf/2502.13923)**
 
 ---
 
