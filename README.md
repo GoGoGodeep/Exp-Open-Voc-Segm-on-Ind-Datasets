@@ -23,7 +23,7 @@
 - **[BLIP2](https://arxiv.org/pdf/2301.12597)**
 
 ## ✌ 视觉大模型相关实验
-- **[Qwen2-VL](https://arxiv.org/pdf/2502.13923)**
+- **[Qwen2-VL](https://arxiv.org/pdf/2409.12191)**
 
 ---
 
