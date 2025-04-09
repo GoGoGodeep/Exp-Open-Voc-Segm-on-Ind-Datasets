@@ -1,8 +1,8 @@
 # 开放词汇在工业数据集上的实验
 
 ## 🖼️ SAM相关模型实验
-- **[SAM](https://arxiv.org/pdf/2304.02643)——2023 ICCV**
-- **[FrozenSeg](https://arxiv.org/pdf/2409.03525)——2024 Arxiv**
+- **[SAM](https://arxiv.org/pdf/2304.02643)—2023 ICCV**
+- **[FrozenSeg](https://arxiv.org/pdf/2409.03525)—2024 Arxiv**
 - **[EBSeg](https://arxiv.org/pdf/2406.09829)——**  
 - **[OVSAM](https://arxiv.org/pdf/2401.02955)**
 
