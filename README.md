@@ -23,9 +23,6 @@
   - **[BLIP](https://arxiv.org/pdf/2201.12086)（2022 ICML）**
 - **[BLIP2](https://arxiv.org/pdf/2301.12597)（2023 CVPR）**
 
-## ✌ 视觉大模型相关实验
-- **[Qwen2-VL](https://arxiv.org/pdf/2409.12191)（2024 Arxiv）**
-
 ---
 
 > 持续更新实验进展与代码实现...
