@@ -31,7 +31,6 @@ class StableDiffusion(nn.Module):
         model_key = "/home/kexin/hd1/zkf/iseg/sd"
 
         # Create model
-
         self.vae = AutoencoderKL.from_pretrained(model_key, subfolder="vae")
         self.vae = self.vae.half() if self.use_half else self.vae
         self.tokenizer = CLIPTokenizer.from_pretrained(model_key, subfolder="tokenizer")
@@ -52,6 +51,8 @@ class StableDiffusion(nn.Module):
         self.unet.eval()
         # del self.vae.decoder
         self.scheduler = DDIMScheduler.from_config(model_key, subfolder="scheduler")
+        
+        # print(self.scheduler.config.num_train_timesteps)
 
         self.num_train_timesteps = self.scheduler.config.num_train_timesteps
         self.min_step = int(self.num_train_timesteps * 0.020)
@@ -169,12 +170,12 @@ class StableDiffusion(nn.Module):
         if len(t) == 2:
             t = torch.randint(t[0], t[1] + 1, [1], dtype=torch.long)
         t = t.to(self.device)
-        # encode image into latents with vae, requires grad!
-        # _t = time.time()
+
         if latents is None:
             latents = self.encode_imgs(input_image)
         if attention_map is not None:
             latents = latents * attention_map.to(self.device)
+
         # _t = time.time()
         with torch.set_grad_enabled(True):
             # add noise
@@ -186,26 +187,28 @@ class StableDiffusion(nn.Module):
                 self.noise = noise
             else:
                 noise = self.noise.to(self.device)
+
             latents_noisy = self.scheduler.add_noise(latents, noise, t)
             latents_noisy = torch.cat([latents_noisy] * len(text_embeddings), dim=0)
-            # text_embeddings_neg = text_embeddings.clone()
-            # text_embeddings_neg[:, 4, :] = -text_embeddings_neg[:, 4, :]
-            # text_embeddings = torch.cat([text_embeddings, self.te], dim=0)
-            # pred noise
+
             noise_pred_ = self.unet(
                 latents_noisy.to(self.device1),
                 t.to(self.device1),
                 encoder_hidden_states=text_embeddings.to(self.device1),
             ).sample.to(self.device)
+        
         self.scheduler.set_timesteps(1000)
+
         if self.processor.mask is not None:
             latents = self.scheduler.step(noise_pred_.cpu(), 1, latents_noisy.cpu())["pred_original_sample"].cuda()
             img = self.decode_latents(latents)
             import matplotlib.pyplot as plt
             plt.imshow(img[0].permute(1, 2, 0).float().cpu())
+
             return None
         else:
             cross_attention_maps, self_attention_maps = self.get_attention_map()
+
             return cross_attention_maps, self_attention_maps
 
     def produce_latents(
@@ -296,6 +299,7 @@ class StableDiffusion(nn.Module):
         # Prompts -> text embeds
         text_embeds = self.get_text_embeds(prompts, negative_prompts)  # [2, 77, 768]
         text_embeds = torch.cat(text_embeds, dim=0)
+
         # Text embeds -> img latents
         latents, all_attention_maps = self.produce_latents(
             text_embeds,

@@ -143,6 +143,52 @@ def process_image_patches(np_img, model, rows=2, cols=2, overlap=0,
     return binary
 
 
+def process_image_patches_multiscale(
+    np_img,
+    model,
+    run_args,
+    large_cfg=(2, 2, 64),
+    small_cfg=(4, 4, 64),
+    alpha=0.6,
+):
+    """
+    Multi-scale patch inference.
+    Returns binary mask: {0, 255}
+    """
+
+    # ---- Large-scale patches (global semantics) ----
+    large_mask = process_image_patches(
+        np_img,
+        model,
+        rows=large_cfg[0],
+        cols=large_cfg[1],
+        overlap=large_cfg[2],
+        run_args=run_args,
+    )
+
+    # ---- Small-scale patches (local details) ----
+    small_mask = process_image_patches(
+        np_img,
+        model,
+        rows=small_cfg[0],
+        cols=small_cfg[1],
+        overlap=small_cfg[2],
+        run_args=run_args,
+    )
+
+    # ---- Normalize to [0,1] ----
+    large = large_mask.astype(np.float32) / 255.0
+    small = small_mask.astype(np.float32) / 255.0
+
+    # ---- Weighted fusion ----
+    fused = alpha * large + (1.0 - alpha) * small
+
+    # ---- Final binarization ----
+    binary = (fused >= 0.5).astype(np.uint8) * 255
+
+    return binary
+
+
 def run_one_image(model, np_img, iter_count=10, thr=0.5, ent=0.5, device=None):
     """
     使用文本提示 "pantograph" 进行推理，输出二分类掩码。
@@ -158,7 +204,7 @@ def run_one_image(model, np_img, iter_count=10, thr=0.5, ent=0.5, device=None):
     # print("tokens:", model.stable_diffusion.tokenizer.tokenize(txt))
 
     # 可选：更详细的语义提示，可提高 cross-attention 的语义聚焦性
-    prompt = f"a photograph of {text} and background"
+    # prompt = f"a photograph of {text} and background"
     # prompt_hazelnut = f"a photograph of {text} on the hazelnut"
     # prompt_1 = "The pantograph consists of two bent, bow-shaped components."
     # prompt_blip = "a photograph of {text} being used in a warehouse"
@@ -236,21 +282,25 @@ def run_one_image(model, np_img, iter_count=10, thr=0.5, ent=0.5, device=None):
 
     
     # ---- 对比式 Prompt ----
-    # prompt_fg = f"a photograph of {text}"
-    prompt_fg = "The pantograph consists of a curved carbon plate and a metal frame with mounting brackets."
+    prompt_fg = f"a photograph of {text}"
+    # prompt_fg = "The pantograph consists of a curved carbon plate and a metal frame with mounting brackets."
     prompt_bg = (
         "the background, environment, surrounding area, "
         "no main object, no foreground"
     )
 
     def compute_cross_attention(prompt):
+        # =========================
+        # Step 1. 前向推理
+        # =========================
         model.test_step((img_tensor, prompt, sel_idx), 0)
 
-        # === 提取 attention ===
         cross_attn = model.cross_attn.clone()
         self_attn = model.self_attn.clone()
 
-        # === cross-attention reshape ===
+        # =========================
+        # Step 2. Cross-attention 预处理
+        # =========================
         cross_attn = cross_attn.permute(0, 2, 1).reshape(1, -1, 64, 64)
         cross_attn -= cross_attn.amin(dim=(-2, -1), keepdim=True)
         cross_attn /= cross_attn.amax(dim=(-2, -1), keepdim=True) + 1e-12
@@ -263,14 +313,18 @@ def run_one_image(model, np_img, iter_count=10, thr=0.5, ent=0.5, device=None):
         cross_attn_proc -= cross_attn_proc.amin(dim=-2, keepdim=True)
         cross_attn_proc /= cross_attn_proc.sum(dim=-2, keepdim=True) + 1e-12
 
-        # === self-attention 归一化 + 熵增强 ===
+        # =========================
+        # Step 3. Self-attention 归一化 + 熵增强
+        # =========================
         self_attn = self_attn / (self_attn.sum(dim=-1, keepdim=True) + 1e-12)
         self_attn = self_attn / (self_attn.amax(dim=-2, keepdim=True) + 1e-12)
+
         self_attn = self_attn + torch.where(
             self_attn == 0,
             torch.zeros_like(self_attn),
             ent * torch.log(torch.e * self_attn + 1e-12)
         )
+
         self_attn = torch.clamp(self_attn, 0, 1)
         self_attn = self_attn / (self_attn.sum(dim=-1, keepdim=True) + 1e-12)
 
@@ -387,15 +441,28 @@ def main(args):
                         binary = binary.astype(np.uint8)
                 else:
                     # ✨改进：尺寸较大，使用 patch 处理
-                    stitched_mask = process_image_patches(
-                        np_img, model,
-                        rows=2, cols=2, overlap=64,
+                    # stitched_mask = process_image_patches(
+                    #     np_img, model,
+                    #     rows=2, cols=2, overlap=64,
+                    #     run_args={
+                    #         "iter_count": args.iter,
+                    #         "thr": args.thr,
+                    #         "ent": args.ent,
+                    #         "device": device,
+                    #     }
+                    # )
+                    stitched_mask = process_image_patches_multiscale(
+                        np_img,
+                        model,
                         run_args={
                             "iter_count": args.iter,
                             "thr": args.thr,
                             "ent": args.ent,
                             "device": device,
-                        }
+                        },
+                        large_cfg=(2, 2, 64),
+                        small_cfg=(4, 4, 64),
+                        alpha=0.6,   # ⭐ 推荐 0.6~0.7
                     )
                     binary = stitched_mask
 
@@ -408,7 +475,7 @@ def main(args):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Headless iSeg inference for pantograph segmentation")
+    parser = argparse.ArgumentParser(description="IndOVSS Inference")
     parser.add_argument("--input_dir", type=str,
                         default="/home/kexin/hd1/zkf/RailData/images/validation")
     parser.add_argument("--output_dir", type=str,
