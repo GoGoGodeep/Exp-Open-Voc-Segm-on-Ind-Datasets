@@ -136,10 +136,6 @@ def process_image_patches(np_img, model, rows=2, cols=2, overlap=0,
     threshold = 0.5  # 可根据任务调整
     binary = (merged >= threshold).astype(np.uint8) * 255
 
-    # ---- 强制校验尺寸一致 ----
-    binary = np.array(Image.fromarray(binary).resize((W, H), Image.NEAREST))
-    assert binary.shape == (H, W), f"Size mismatch: got {binary.shape}, expected {(H, W)}"
-
     return binary
 
 
@@ -197,7 +193,7 @@ def run_one_image(model, np_img, iter_count=10, thr=0.5, ent=0.5, device=None):
     img_tensor = img_to_tensor(np_img, device=device, half=model.half)
 
     # === Step 1. 准备文本提示 ===
-    text = "pantograph"
+    text = "cut"
     txt, sel_idx = build_text_prompt_indices(model, text)
     # print("Processed text:", txt)
     # print("sel_idx:", sel_idx)
@@ -289,19 +285,16 @@ def run_one_image(model, np_img, iter_count=10, thr=0.5, ent=0.5, device=None):
         "no main object, no foreground"
     )
 
-    def compute_cross_attention(prompt):
-        # =========================
-        # Step 1. 前向推理
-        # =========================
-        model.test_step((img_tensor, prompt, sel_idx), 0)
 
+    def compute_cross_attention(prompt):
+        # Step 1. 前向推理
+        model.test_step((img_tensor, prompt, sel_idx), 0)
         cross_attn = model.cross_attn.clone()
         self_attn = model.self_attn.clone()
 
-        # =========================
         # Step 2. Cross-attention 预处理
-        # =========================
         cross_attn = cross_attn.permute(0, 2, 1).reshape(1, -1, 64, 64)
+        
         cross_attn -= cross_attn.amin(dim=(-2, -1), keepdim=True)
         cross_attn /= cross_attn.amax(dim=(-2, -1), keepdim=True) + 1e-12
 
@@ -337,6 +330,7 @@ def run_one_image(model, np_img, iter_count=10, thr=0.5, ent=0.5, device=None):
         # === 恢复空间结构 ===
         cross_attn_proc = cross_attn_proc.mean(-1, keepdim=True)
         cross_attn_proc /= cross_attn_proc.amax(dim=-2, keepdim=True) + 1e-12
+        
         cross_attn_map = (
             cross_attn_proc
             .permute(0, 2, 1)
@@ -344,6 +338,7 @@ def run_one_image(model, np_img, iter_count=10, thr=0.5, ent=0.5, device=None):
         )
 
         return cross_attn_map
+
 
     with torch.no_grad():
         # === 前景 / 背景 attention ===
@@ -477,9 +472,9 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="IndOVSS Inference")
     parser.add_argument("--input_dir", type=str,
-                        default="/home/kexin/hd1/zkf/RailData/images/validation")
+                        default="/home/kexin/hd1/zkf/MVTEC/hazelnut/test/cut")
     parser.add_argument("--output_dir", type=str,
-                        default="/home/kexin/hd1/zkf/IndOVSS/mask_outputs")
+                        default="/home/kexin/hd1/zkf/IndOVSS/mask_outputs_hazelnut")
     parser.add_argument("--iter", type=int, default=5, help="Iteration count")
     parser.add_argument("--thr", type=float, default=0.5, help="Threshold 0..1")
     parser.add_argument("--ent", type=float, default=0.5, help="Entropy scaling factor")

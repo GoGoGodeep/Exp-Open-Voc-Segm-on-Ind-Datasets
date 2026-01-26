@@ -70,6 +70,9 @@ class StableDiffusion(nn.Module):
         # 获取部分中间结果
         self.attention_maps = {}
 
+        # for name, module in self.unet.named_modules():
+        #     print(name, "->", module.__class__.__name__)
+
         def create_nested_hook_for_attention_modules(n):
             def hook(module, input, output):
                 bs_head, h, w = output[1].shape
@@ -126,6 +129,7 @@ class StableDiffusion(nn.Module):
 
     def get_attention_map(self):
         raw_attention_maps = self.attention_maps
+        # print(raw_attention_maps.keys())
         cross_attention_maps = {8: [], 16: [], 32: [], 64: []}
         self_attention_maps = {8: [], 16: [], 32: [], 64: []}
 
@@ -135,9 +139,12 @@ class StableDiffusion(nn.Module):
             hw = int(math.sqrt(img_embed_len))
             reshaped_attn = raw_attention_maps[layer].reshape(bs, head, hw, hw, text_embed_len).softmax(-1)
             if layer.endswith("attn2"):  # cross attentions
+                # print(f"[DEBUG] found cross attention layer: {layer} with size {hw}x{hw}")
                 cross_attention_maps[hw].append(reshaped_attn)
             elif layer.endswith("attn1"):  # self attentions
+                # print(f"[DEBUG] found self attention layer: {layer} with size {hw}x{hw}")   
                 self_attention_maps[hw].append(reshaped_attn)
+
         for key, values in cross_attention_maps.items():
             if len(values) == 0: continue
             attn = torch.cat(values, dim=1)
